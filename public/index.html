@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AEO Scanner — AI 搜尋友好度偵測</title>
+<style>
+  :root {
+    --teal-50: #E1F5EE;
+    --teal-100: #9FE1CB;
+    --teal-600: #0F6E56;
+    --teal-800: #085041;
+    --amber-50: #FAEEDA;
+    --amber-800: #633806;
+    --red-50: #FCEBEB;
+    --red-600: #A32D2D;
+    --red-800: #791F1F;
+    --gray-50: #F1EFE8;
+    --gray-100: #D3D1C7;
+    --gray-400: #888780;
+    --gray-800: #444441;
+    --text: #1a1a18;
+    --text-muted: #6b6b68;
+    --text-hint: #9a9a96;
+    --border: rgba(0,0,0,.1);
+    --border-light: rgba(0,0,0,.06);
+    --surface: #ffffff;
+    --bg: #fafaf8;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --mono: 'SF Mono', 'Fira Mono', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
+
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--text-hint); margin-bottom: 8px; }
+  h1 { font-size: 26px; font-weight: 500; letter-spacing: -.02em; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+  }
+
+  .input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  input[type=text] {
+    flex: 1; height: 42px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 0 14px;
+    font-family: var(--mono); font-size: 13px; color: var(--text);
+    background: var(--bg); outline: none; transition: border-color .15s;
+  }
+  input[type=text]:focus { border-color: var(--teal-600); }
+  input[type=text]::placeholder { color: var(--text-hint); }
+  button {
+    height: 42px; padding: 0 20px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--text); color: #fff;
+    font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .85; }
+  button:disabled { opacity: .4; cursor: default; }
+  .helper { font-size: 12px; color: var(--text-hint); }
+
+  .progress-card { padding: 1.25rem 1.5rem; }
+  .step { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; color: var(--text-muted); }
+  .step.active { color: var(--text); }
+  .step.done { color: var(--text-hint); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-idle { background: var(--gray-100); }
+  .dot-spin { background: var(--teal-600); animation: pulse .9s infinite; }
+  .dot-done { background: var(--teal-600); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .step-check { font-size: 11px; color: var(--teal-600); margin-left: auto; }
+
+  .error-card {
+    background: var(--red-50); border: 1px solid #F09595;
+    border-radius: var(--radius); padding: 1.125rem 1.5rem;
+  }
+  .error-card h3 { font-size: 14px; font-weight: 500; color: var(--red-800); margin-bottom: 6px; }
+  .error-card p { font-size: 13px; color: var(--red-600); line-height: 1.6; }
+  details summary { font-size: 12px; color: var(--red-600); cursor: pointer; margin-top: 10px; }
+  details pre { font-family: var(--mono); font-size: 11px; color: var(--red-800); margin-top: 8px;
+    white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto; }
+
+  .result-header {
+    display: flex; align-items: center; gap: 1.5rem; padding: 1.25rem 1.5rem;
+  }
+  .score-circle {
+    width: 72px; height: 72px; border-radius: 50%;
+    border: 1.5px solid var(--border); display: flex;
+    flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .score-num { font-family: var(--mono); font-size: 24px; font-weight: 500; line-height: 1; }
+  .score-den { font-family: var(--mono); font-size: 10px; color: var(--text-hint); margin-top: 2px; }
+  .result-meta { flex: 1; min-width: 0; }
+  .result-domain { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+  .result-gist { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  .grade-block { text-align: center; padding-left: 1.25rem; border-left: 1px solid var(--border-light); flex-shrink: 0; }
+  .grade-label { font-family: var(--mono); font-size: 10px; letter-spacing: .05em; color: var(--text-hint); margin-bottom: 2px; }
+  .grade-val { font-family: var(--mono); font-size: 30px; font-weight: 500; }
+
+  .scores-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  .score-tile {
+    background: var(--gray-50); border-radius: var(--radius-sm);
+    padding: .875rem 1rem;
+  }
+  .score-tile-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .score-tile-val { font-family: var(--mono); font-size: 24px; font-weight: 500; margin-bottom: 8px; }
+  .bar { height: 3px; border-radius: 2px; background: var(--border-light); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width .7s ease; }
+
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; color: var(--text-hint); margin-bottom: 12px; }
+  .row-rule { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; }
+  .row-rule:last-child { border-bottom: none; }
+  .row-label { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+  .p-ok { background: var(--teal-50); color: var(--teal-800); }
+  .p-fail { background: var(--red-50); color: var(--red-800); }
+  .p-warn { background: var(--amber-50); color: var(--amber-800); }
+  .p-dim { background: var(--gray-50); color: var(--gray-400); }
+  .pdot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .pdot-ok { background: var(--teal-600); }
+  .pdot-fail { background: var(--red-600); }
+
+  .type-tag { display: inline-flex; font-size: 11px; font-weight: 500;
+    padding: 3px 9px; border-radius: 20px; margin: 0 4px 4px 0;
+    background: var(--teal-50); color: var(--teal-800); }
+  .note { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 10px; }
+
+  .summary-text { font-size: 14px; line-height: 1.8; color: var(--text); }
+  .rec-row { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border-light); }
+  .rec-row:last-child { border-bottom: none; }
+  .rec-num { font-family: var(--mono); font-size: 11px; color: var(--text-hint); min-width: 18px; padding-top: 2px; }
+  .rec-text { font-size: 13px; color: var(--text); line-height: 1.65; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .hidden { display: none !important; }
+  section { margin-bottom: 10px; }
+
+  @media (max-width: 520px) {
+    .two-col { grid-template-columns: 1fr; }
+    .scores-grid { grid-template-columns: repeat(3,1fr); }
+    .result-header { flex-wrap: wrap; gap: 1rem; }
+    .grade-block { border-left: none; padding-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header style="margin-bottom:2.5rem">
+    <p class="eyebrow">AEO SCANNER · v3.0 · live detection</p>
+    <h1>AI 搜尋友好度偵測</h1>
+    <p class="subtitle">輸入網址，直接讀取 robots.txt、sitemap、llms.txt 及結構化資料，給出真實評分</p>
+  </header>
+
+  <section id="inputSec">
+    <div class="card">
+      <div class="input-row">
+        <input type="text" id="urlInput" placeholder="https://example.com" autocomplete="off" />
+        <button id="scanBtn" onclick="go()">掃描</button>
+      </div>
+      <p class="helper">偵測需 15–30 秒，後端會實際抓取網站各端點再送 Claude 分析</p>
+    </div>
+  </section>
+
+  <section id="progressSec" class="card progress-card hidden" style="margin-top:10px">
+    <p class="section-label" style="margin-bottom:10px">偵測進行中</p>
+    <div id="stepList"></div>
+  </section>
+
+  <section id="errorSec" class="error-card hidden" style="margin-top:10px">
+    <h3>掃描失敗</h3>
+    <p id="errorMsg"></p>
+    <details><summary>顯示原始回應（偵錯）</summary><pre id="errorRaw"></pre></details>
+  </section>
+
+  <div id="resultsSec" class="hidden" style="margin-top:10px">
+
+    <section class="card result-header" style="margin-bottom:10px">
+      <div class="score-circle">
+        <span class="score-num" id="rScore">—</span>
+        <span class="score-den">/100</span>
+      </div>
+      <div class="result-meta">
+        <p class="result-domain" id="rDomain"></p>
+        <p class="result-gist" id="rGist"></p>
+      </div>
+      <div class="grade-block">
+        <p class="grade-label">GRADE</p>
+        <p class="grade-val" id="rGrade">—</p>
+      </div>
+    </section>
+
+    <section class="scores-grid" style="margin-bottom:10px">
+      <div class="score-tile">
+        <p class="score-tile-label">爬蟲友好</p>
+        <p class="score-tile-val" id="sC">—</p>
+        <div class="bar"><div class="bar-fill" id="bC" style="width:0"></div></div>
+      </div>
+      <div class="score-tile">
+        <p class="score-tile-label">內容品質</p>
+        <p class="score-tile-val" id="sQ">—</p>
+        <div class="bar"><div class="bar-fill" id="bQ" style="width:0"></div></div>
+      </div>
+      <div class="score-tile">
+        <p class="score-tile-label">AI 能見度</p>
+        <p class="score-tile-val" id="sA">—</p>
+        <div class="bar"><div class="bar-fill" id="bA" style="width:0"></div></div>
+      </div>
+    </section>
+
+    <section class="two-col" style="margin-bottom:10px">
+      <div class="card">
+        <p class="section-label">AI bot 爬取權限</p>
+        <div id="dBots"></div>
+        <p class="note" id="dBotsNote" style="display:none"></p>
+      </div>
+      <div class="card">
+        <p class="section-label">必要檔案偵測</p>
+        <div id="dFiles"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:10px">
+      <p class="section-label">結構化資料 schema.org</p>
+      <div id="dSchema"></div>
+    </section>
+
+    <section class="card" style="margin-bottom:10px">
+      <p class="section-label">AI 白話總結</p>
+      <p class="summary-text" id="dSummary"></p>
+    </section>
+
+    <section class="card">
+      <p class="section-label">優化建議</p>
+      <div id="dRecs"></div>
+    </section>
+
+  </div>
+
+</div>
+
+<script>
+const STEPS = [
+  '讀取 robots.txt',
+  '讀取 sitemap.xml',
+  '讀取 llms.txt',
+  '掃描首頁結構化資料',
+  'Claude 分析評分中'
+];
+
+function rSteps(cur) {
+  document.getElementById('stepList').innerHTML = STEPS.map((s, i) => {
+    const done = i < cur, active = i === cur;
+    const dotClass = done ? 'dot dot-done' : active ? 'dot dot-spin' : 'dot dot-idle';
+    const cls = 'step' + (active ? ' active' : done ? ' done' : '');
+    const check = done ? '<span class="step-check">✓</span>' : '';
+    return `<div class="${cls}"><span class="${dotClass}"></span><span>${s}</span>${check}</div>`;
+  }).join('');
+}
+
+function pill(v) {
+  if (v === true || v === 'allowed')
+    return `<span class="pill p-ok"><span class="pdot pdot-ok"></span>${v === 'allowed' ? '允許' : '存在'}</span>`;
+  if (v === false || v === 'blocked')
+    return `<span class="pill p-fail"><span class="pdot pdot-fail"></span>${v === 'blocked' ? '封鎖' : '未找到'}</span>`;
+  return `<span class="pill p-dim">未知</span>`;
+}
+
+function barColor(s) { return s >= 75 ? '#1D9E75' : s >= 50 ? '#BA7517' : '#E24B4A'; }
+
+function render(d) {
+  document.getElementById('progressSec').classList.add('hidden');
+  document.getElementById('resultsSec').classList.remove('hidden');
+
+  const os = d.overall_score ?? 0;
+  document.getElementById('rScore').textContent = os;
+  document.getElementById('rGrade').textContent = d.grade ?? '—';
+  document.getElementById('rDomain').textContent = d.domain ?? '';
+  document.getElementById('rGist').textContent = d.ai_visibility?.assessment ?? '';
+
+  const cf = d.crawl_friendliness ?? {}, cq = d.content_quality ?? {}, av = d.ai_visibility ?? {};
+  const scores = [cf.score ?? 0, cq.score ?? 0, av.score ?? 0];
+  ['C', 'Q', 'A'].forEach((k, i) => {
+    document.getElementById('s' + k).textContent = scores[i];
+    setTimeout(() => {
+      const el = document.getElementById('b' + k);
+      el.style.width = scores[i] + '%';
+      el.style.background = barColor(scores[i]);
+    }, 150);
+  });
+
+  const rf = cf.robots_txt ?? {};
+  document.getElementById('dBots').innerHTML = [
+    { n: 'GPTBot', k: 'gptbot_status' },
+    { n: 'ClaudeBot', k: 'claudebot_status' },
+    { n: 'anthropic-ai', k: 'anthropicai_status' },
+    { n: 'PerplexityBot', k: 'perplexitybot_status' },
+  ].map(b => `<div class="row-rule"><span class="row-label">${b.n}</span>${pill(rf[b.k] || 'unknown')}</div>`).join('');
+  if (rf.details) {
+    const n = document.getElementById('dBotsNote');
+    n.textContent = rf.details; n.style.display = 'block';
+  }
+
+  document.getElementById('dFiles').innerHTML = [
+    { l: 'robots.txt', v: cf.robots_txt?.found },
+    { l: 'sitemap.xml', v: cf.sitemap?.found },
+    { l: 'llms.txt', v: cf.llms_txt?.found },
+  ].map(f => `<div class="row-rule"><span class="row-label">${f.l}</span>${pill(f.v)}</div>`).join('') +
+    [cf.sitemap, cf.llms_txt].filter(x => x?.details)
+      .map(x => `<p class="note">${x.details}</p>`).join('');
+
+  const jld = cq.json_ld ?? {};
+  const types = Array.isArray(jld.types) && jld.types.length
+    ? jld.types.map(t => `<span class="type-tag">${t}</span>`).join('')
+    : '<span class="pill p-dim">未偵測到</span>';
+  document.getElementById('dSchema').innerHTML =
+    `<div class="row-rule"><span style="font-size:13px">JSON-LD 結構化資料</span>${pill(jld.found)}</div>` +
+    `<div class="row-rule"><span style="font-size:13px">FAQ Schema</span>${pill(cq.faq_schema)}</div>` +
+    `<div style="padding-top:10px">${types}</div>` +
+    (jld.details ? `<p class="note">${jld.details}</p>` : '') +
+    (cq.content_assessment ? `<p class="note" style="margin-top:8px">${cq.content_assessment}</p>` : '');
+
+  document.getElementById('dSummary').textContent = d.summary_zh ?? '';
+  const recs = d.recommendations_zh ?? [];
+  document.getElementById('dRecs').innerHTML = recs.map((r, i) =>
+    `<div class="rec-row"><span class="rec-num">${i + 1}</span><span class="rec-text">${r}</span></div>`
+  ).join('');
+}
+
+function showErr(msg, raw) {
+  document.getElementById('progressSec').classList.add('hidden');
+  document.getElementById('errorSec').classList.remove('hidden');
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorRaw').textContent = raw || '（空）';
+  document.getElementById('scanBtn').disabled = false;
+}
+
+function extractJSON(txt) {
+  let s = txt.trim();
+  const m = s.match(/```(?:json)?\s*([\s\S]+?)```/);
+  if (m) s = m[1].trim();
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a !== -1 && b > a) s = s.slice(a, b + 1);
+  return JSON.parse(s);
+}
+
+async function go() {
+  let raw = document.getElementById('urlInput').value.trim();
+  if (!raw) return;
+  if (!raw.startsWith('http')) raw = 'https://' + raw;
+
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('errorSec').classList.add('hidden');
+  document.getElementById('resultsSec').classList.add('hidden');
+  document.getElementById('progressSec').classList.remove('hidden');
+  rSteps(0);
+
+  const timers = [4000, 8000, 13000, 18000].map((t, i) =>
+    setTimeout(() => rSteps(i + 1), t)
+  );
+
+  let rawResp = '';
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: raw }),
+    });
+    rawResp = await res.text();
+    timers.forEach(clearTimeout);
+    rSteps(4);
+
+    const data = JSON.parse(rawResp);
+    if (!res.ok) { showErr(data?.error || `HTTP ${res.status}`, rawResp); return; }
+    document.getElementById('scanBtn').disabled = false;
+    render(data);
+  } catch (err) {
+    timers.forEach(clearTimeout);
+    showErr(`錯誤：${err.message}`, rawResp);
+  }
+}
+
+document.getElementById('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') go();
+});
+</script>
+</body>
+</html>
