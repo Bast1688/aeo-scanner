@@ -1,6 +1,6 @@
 export const config = { runtime: 'edge' };
 
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+const CLAUDE_MODEL = 'claude-sonnet-4-5';
 
 async function safeFetch(url, timeoutMs = 8000) {
   try {
