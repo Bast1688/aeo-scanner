@@ -142,7 +142,7 @@ Scoring rules:
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 1024,
+      max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     }),
