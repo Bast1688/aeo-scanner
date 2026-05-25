@@ -80,7 +80,9 @@ export default async function handler(req) {
     fmtFetch(homepage, 'Homepage HTML'),
   ].join('\n');
 
-  const systemPrompt = `You are a technical AEO (Answer Engine Optimization) auditor.
+  const systemPrompt = `You MUST respond with ONLY a JSON object. Begin your response with { and end with }. Never write any explanation, apology, or text outside the JSON.
+  
+You are a technical AEO (Answer Engine Optimization) auditor.
 You have been given REAL fetched content from a website's key endpoints.
 Analyze this data carefully. Return ONLY a valid JSON object — no prose, no backticks, no markdown.
 Start immediately with { and end with }.
@@ -142,7 +144,8 @@ Scoring rules:
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 2000,
+      max_tokens: 2048,
+      temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     }),
