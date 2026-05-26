@@ -160,22 +160,41 @@ Scoring rules:
     );
   }
 
-  const text = claudeData.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
+ const text = claudeData.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
 
-// 如果 Claude 回傳錯誤訊息而非 JSON，給出備用回應
-if (!text || text.trim().startsWith('An error') || text.trim().startsWith('I ') || text.trim().startsWith('Sorry')) {
-  return new Response(JSON.stringify({
-    domain: new URL(url).hostname,
-    overall_score: 0,
-    grade: 'F',
-    crawl_friendliness: { score: 0, robots_txt: { found: false, gptbot_status: 'unknown', claudebot_status: 'unknown', anthropicai_status: 'unknown', perplexitybot_status: 'unknown', details: '無法分析，請重新掃描' }, sitemap: { found: false, details: '' }, llms_txt: { found: false, details: '' } },
-    content_quality: { score: 0, json_ld: { found: false, types: [], details: '' }, faq_schema: false, content_assessment: '無法分析' },
-    ai_visibility: { score: 0, assessment: '無法分析' },
-    summary_zh: '此次掃描未能完成分析，可能是網站內容較複雜。建議重新掃描一次，通常第二次可成功。',
-    recommendations_zh: ['請重新掃描一次', '若持續失敗，嘗試掃描網站的子頁面而非首頁', '確認網站可正常訪問', '聯絡專注玩星取得人工分析服務']
-  }), {
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-  });
+    // 備用回應（當 Claude 無法產生 JSON 時）
+    const fallback = new Response(JSON.stringify({
+      domain: new URL(url).hostname,
+      overall_score: 0, grade: 'F',
+      crawl_friendliness: { score: 0,
+        robots_txt: { found: false, gptbot_status: 'unknown', claudebot_status: 'unknown', anthropicai_status: 'unknown', perplexitybot_status: 'unknown', details: '分析未完成，請重新掃描' },
+        sitemap: { found: false, details: '' },
+        llms_txt: { found: false, details: '' }
+      },
+      content_quality: { score: 0, json_ld: { found: false, types: [], details: '' }, faq_schema: false, content_assessment: '分析未完成' },
+      ai_visibility: { score: 0, assessment: '分析未完成' },
+      summary_zh: '此次掃描未能完成，網站內容較複雜或 AI 回應異常。請重新掃描一次，通常第二次即可成功。',
+      recommendations_zh: ['請重新點擊掃描按鈕再試一次', '若持續失敗，改掃網站的產品頁而非首頁', '確認網站目前可正常打開', '聯絡專注玩星取得人工分析']
+    }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+
+    // 檢查是否包含 JSON 結構
+    if (!text || !text.includes('{')) return fallback;
+
+    // 提取 JSON
+    let s = text.trim();
+    const m = s.match(/```(?:json)?\s*([\s\S]+?)```/);
+    if (m) s = m[1].trim();
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a === -1 || b <= a) return fallback;
+    s = s.slice(a, b + 1);
+
+    let parsed;
+    try { parsed = JSON.parse(s); }
+    catch (e) { return fallback; }
+
+    return new Response(JSON.stringify(parsed), {
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
 }
 
   let parsed;
