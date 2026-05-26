@@ -1,26 +1,29 @@
-export const config = { runtime: 'edge' };
+// Node.js Runtime（非 Edge）— 支援 vercel.json 的 maxDuration: 30 設定
 
 const CLAUDE_MODEL = 'claude-sonnet-4-5';
 
-const CORS = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*'
+const setCors = (res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 };
 
-const fallbackResponse = (domain, msg) => new Response(JSON.stringify({
-  domain: domain || '',
-  overall_score: 0, grade: 'F',
-  crawl_friendliness: {
-    score: 0,
-    robots_txt: { found: false, gptbot_status: 'unknown', claudebot_status: 'unknown', anthropicai_status: 'unknown', perplexitybot_status: 'unknown', details: msg || '分析未完成，請重新掃描' },
-    sitemap: { found: false, details: '' },
-    llms_txt: { found: false, details: '' }
-  },
-  content_quality: { score: 0, json_ld: { found: false, types: [], details: '' }, faq_schema: false, content_assessment: '' },
-  ai_visibility: { score: 0, assessment: '' },
-  summary_zh: '此次掃描未完成，請重新掃描一次。通常第二次即可成功。',
-  recommendations_zh: ['請重新點擊掃描按鈕', '若持續失敗請聯絡專注玩星']
-}), { headers: CORS });
+const sendFallback = (res, domain, msg) => {
+  res.status(200).json({
+    domain: domain || '',
+    overall_score: 0, grade: 'F',
+    crawl_friendliness: {
+      score: 0,
+      robots_txt: { found: false, gptbot_status: 'unknown', claudebot_status: 'unknown', anthropicai_status: 'unknown', perplexitybot_status: 'unknown', details: msg || '分析未完成，請重新掃描' },
+      sitemap: { found: false, details: '' },
+      llms_txt: { found: false, details: '' }
+    },
+    content_quality: { score: 0, json_ld: { found: false, types: [], details: '' }, faq_schema: false, content_assessment: '' },
+    ai_visibility: { score: 0, assessment: '' },
+    summary_zh: '此次掃描未完成，請重新掃描一次。通常第二次即可成功。',
+    recommendations_zh: ['請重新點擊掃描按鈕', '若持續失敗請聯絡專注玩星']
+  });
+};
 
 const doFetch = async (url) => {
   try {
@@ -51,31 +54,20 @@ const fmtResult = (r, label) => {
   return label + ': INACCESSIBLE (' + (r.error || 'error') + ')\n';
 };
 
-export default async function handler(req) {
+export default async function handler(req, res) {
+  setCors(res);
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      }
-    });
+    return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  let body;
-  try {
-    body = await req.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: CORS });
-  }
-
-  const url = (body || {}).url;
+  const { url } = req.body || {};
   if (!url) {
-    return new Response(JSON.stringify({ error: 'Missing url parameter' }), { status: 400, headers: CORS });
+    return res.status(400).json({ error: 'Missing url parameter' });
   }
 
   let origin, domain;
@@ -84,12 +76,12 @@ export default async function handler(req) {
     origin = u.origin;
     domain = u.hostname;
   } catch (e) {
-    return new Response(JSON.stringify({ error: 'Invalid URL' }), { status: 400, headers: CORS });
+    return res.status(400).json({ error: 'Invalid URL' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500, headers: CORS });
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' });
   }
 
   const results = await Promise.all([
@@ -106,7 +98,7 @@ export default async function handler(req) {
     fmtResult(results[3], 'Homepage')
   ].join('\n');
 
-  const systemPrompt = 'You MUST respond with ONLY a JSON object. Begin your response immediately with { and end with }. Never write any explanation or text outside the JSON.\n\nYou are a technical AEO auditor. Analyze the real fetched website data and return this exact JSON:\n{"domain":"string","crawl_friendliness":{"score":0,"robots_txt":{"found":false,"gptbot_status":"unknown","claudebot_status":"unknown","anthropicai_status":"unknown","perplexitybot_status":"unknown","details":"Chinese"},"sitemap":{"found":false,"details":"Chinese"},"llms_txt":{"found":false,"details":"Chinese"}},"content_quality":{"score":0,"json_ld":{"found":false,"types":[],"details":"Chinese"},"faq_schema":false,"content_assessment":"Chinese"},"ai_visibility":{"score":0,"assessment":"Chinese"},"overall_score":0,"grade":"F","summary_zh":"3 Chinese sentences","recommendations_zh":["建議1","建議2","建議3","建議4"]}\n\nScoring rules: robots+bots_allowed=+40crawl, sitemap=+30crawl, llms.txt=+30crawl_bonus, json-ld=+45content, faq_schema=+25content. overall=round(crawl*0.35+content*0.35+ai*0.30). Grades: A=85+,B=70+,C=55+,D=40+,F<40';
+  const systemPrompt = 'You MUST respond with ONLY a JSON object. Begin immediately with { and end with }. No explanation or text outside JSON.\n\nYou are a technical AEO auditor. Return this exact JSON structure:\n{"domain":"string","crawl_friendliness":{"score":0,"robots_txt":{"found":false,"gptbot_status":"unknown","claudebot_status":"unknown","anthropicai_status":"unknown","perplexitybot_status":"unknown","details":"Chinese"},"sitemap":{"found":false,"details":"Chinese"},"llms_txt":{"found":false,"details":"Chinese"}},"content_quality":{"score":0,"json_ld":{"found":false,"types":[],"details":"Chinese"},"faq_schema":false,"content_assessment":"Chinese"},"ai_visibility":{"score":0,"assessment":"Chinese"},"overall_score":0,"grade":"F","summary_zh":"3 Chinese sentences","recommendations_zh":["建議1","建議2","建議3","建議4"]}\n\nScoring: robots+bots_allowed=+40crawl, sitemap=+30crawl, llms.txt=+30crawl_bonus, json-ld=+45content, faq_schema=+25content. overall=round(crawl*0.35+content*0.35+ai*0.30). A=85+,B=70+,C=55+,D=40+,F<40';
 
   const userMessage = 'Analyze AEO for: ' + url + '\n\n' + realData;
 
@@ -129,19 +121,19 @@ export default async function handler(req) {
     });
     claudeData = await claudeRes.json();
   } catch (e) {
-    return fallbackResponse(domain, 'Claude 連線失敗：' + e.message);
+    return sendFallback(res, domain, 'Claude 連線失敗：' + e.message);
   }
 
   if (!claudeRes.ok) {
-    const errMsg = (claudeData && claudeData.error && claudeData.error.message) || ('Claude API error ' + claudeRes.status);
-    return new Response(JSON.stringify({ error: errMsg }), { status: 502, headers: CORS });
+    const errMsg = (claudeData && claudeData.error && claudeData.error.message) || ('Claude API ' + claudeRes.status);
+    return res.status(502).json({ error: errMsg });
   }
 
   const content = claudeData.content || [];
   const text = content.filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
 
   if (!text || !text.includes('{')) {
-    return fallbackResponse(domain, 'AI 回應格式異常，請重試');
+    return sendFallback(res, domain, 'AI 回應格式異常，請重試');
   }
 
   let s = text.trim();
@@ -152,7 +144,7 @@ export default async function handler(req) {
   const a = s.indexOf('{');
   const b = s.lastIndexOf('}');
   if (a === -1 || b <= a) {
-    return fallbackResponse(domain, 'JSON 結構不完整，請重試');
+    return sendFallback(res, domain, 'JSON 結構不完整，請重試');
   }
   s = s.slice(a, b + 1);
 
@@ -160,8 +152,8 @@ export default async function handler(req) {
   try {
     parsed = JSON.parse(s);
   } catch (e) {
-    return fallbackResponse(domain, 'JSON 解析失敗，請重試');
+    return sendFallback(res, domain, 'JSON 解析失敗，請重試');
   }
 
-  return new Response(JSON.stringify(parsed), { headers: CORS });
+  return res.status(200).json(parsed);
 }
