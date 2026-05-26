@@ -162,6 +162,22 @@ Scoring rules:
 
   const text = claudeData.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
 
+// 如果 Claude 回傳錯誤訊息而非 JSON，給出備用回應
+if (!text || text.trim().startsWith('An error') || text.trim().startsWith('I ') || text.trim().startsWith('Sorry')) {
+  return new Response(JSON.stringify({
+    domain: new URL(url).hostname,
+    overall_score: 0,
+    grade: 'F',
+    crawl_friendliness: { score: 0, robots_txt: { found: false, gptbot_status: 'unknown', claudebot_status: 'unknown', anthropicai_status: 'unknown', perplexitybot_status: 'unknown', details: '無法分析，請重新掃描' }, sitemap: { found: false, details: '' }, llms_txt: { found: false, details: '' } },
+    content_quality: { score: 0, json_ld: { found: false, types: [], details: '' }, faq_schema: false, content_assessment: '無法分析' },
+    ai_visibility: { score: 0, assessment: '無法分析' },
+    summary_zh: '此次掃描未能完成分析，可能是網站內容較複雜。建議重新掃描一次，通常第二次可成功。',
+    recommendations_zh: ['請重新掃描一次', '若持續失敗，嘗試掃描網站的子頁面而非首頁', '確認網站可正常訪問', '聯絡專注玩星取得人工分析服務']
+  }), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  });
+}
+
   let parsed;
   try {
     let s = text.trim();
